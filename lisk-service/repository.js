@@ -26,54 +26,46 @@ class LiskServiceRepository {
     async get(path, params = {}) {
         const response = await this.axiosClient.get(`${this.serviceURL}${path}`, {params});
         return response.data;
-    };
+    }
 
     async post(path, payload = {}) {
         const response = await this.axiosClient.post(`${this.serviceURL}${path}`, payload);
         return response.data;
-    };
+    }
 
-    async postTransaction(payload) {
-        return this.post(metaStore.Transactions.path, payload);
-    };
+    async postTransaction(transaction) {
+        return this.post(metaStore.Transactions.path, { transaction });
+    }
 
     async getNetworkStatus() {
-        return this.get('/api/v2/network/status');
-    };
+        return this.get('/api/v3/network/status');
+    }
 
     async getNetworkStats() {
-        return this.get('/api/v2/network/statistics');
-    };
+        return this.get('/api/v3/network/statistics');
+    }
 
     async getFees() {
-        return this.get('/api/v2/fees');
-    };
+        return this.get('/api/v3/fees');
+    }
 
-    async getAccounts(filterParams) {
-        return (await this.get(metaStore.Accounts.path, filterParams)).data;
-    };
+    async getAuth(walletAddress) {
+        return (await this.get('/api/v3/auth', {address: walletAddress})).data;
+    }
 
     async getTransactions(filterParams) {
         return (await this.get(metaStore.Transactions.path, filterParams)).data;
-    };
+    }
 
     async getBlocks(filterParams) {
         return (await this.get(metaStore.Blocks.path, filterParams)).data;
-    };
-
-    async getAccountByAddress(walletAddress) {
-        const accounts = await this.getAccounts({
-            [metaStore.Accounts.filter.address]: walletAddress,
-        });
-        return firstOrNull(accounts);
-    };
+    }
 
     async getOutboundTransactions(senderAddress, fromTimestamp, limit, order = 'asc') {
         const transactionFilterParams = {
             [metaStore.Transactions.filter.senderAddress]: senderAddress,
             [metaStore.Transactions.filter.limit]: limit,
-            [metaStore.Transactions.filter.moduleAssetId]: '2:0', // transfer transaction
-            [metaStore.Transactions.filter.moduleAssetName]: 'token:transfer', // token transfer
+            [metaStore.Transactions.filter.moduleCommand]: 'token:transfer', // token transfer
         };
         if (order === 'asc') {
             transactionFilterParams[metaStore.Transactions.filter.sort] = metaStore.Transactions.sortBy.timestampAsc;
@@ -83,37 +75,25 @@ class LiskServiceRepository {
             transactionFilterParams[metaStore.Transactions.filter.timestamp] = `0:${fromTimestamp}`;
         }
         return await this.getTransactions(transactionFilterParams);
-    };
+    }
 
     async getInboundTransactionsFromBlock(recipientAddress, blockId) {
         const transactionFilterParams = {
             [metaStore.Transactions.filter.recipientAddress]: recipientAddress,
             [metaStore.Transactions.filter.blockId]: blockId,
-            [metaStore.Transactions.filter.moduleAssetId]: '2:0', // transfer transaction
-            [metaStore.Transactions.filter.moduleAssetName]: 'token:transfer', // token transfer
+            [metaStore.Transactions.filter.moduleCommand]: 'token:transfer', // token transfer
         };
         return await this.getTransactions(transactionFilterParams);
-    };
+    }
 
     async getOutboundTransactionsFromBlock(senderAddress, blockId) {
         const transactionFilterParams = {
             [metaStore.Transactions.filter.senderAddress]: senderAddress,
             [metaStore.Transactions.filter.blockId]: blockId,
-            [metaStore.Transactions.filter.moduleAssetId]: '2:0', // transfer transaction
-            [metaStore.Transactions.filter.moduleAssetName]: 'token:transfer', // token transfer
+            [metaStore.Transactions.filter.moduleCommand]: 'token:transfer', // token transfer
         };
         return await this.getTransactions(transactionFilterParams);
-    };
-
-    async getLastBlockBelowTimestamp(timeStamp) {
-        const blockFilterParams = {
-            [metaStore.Blocks.filter.timestamp]: `0:${timeStamp}`,
-            [metaStore.Blocks.filter.sort]: metaStore.Blocks.sortBy.timestampDesc,
-            [metaStore.Blocks.filter.limit]: 1,
-        };
-        const blocks = await this.getBlocks(blockFilterParams);
-        return firstOrNull(blocks);
-    };
+    }
 
     async getLastBlock() {
         const blockFilterParams = {
@@ -122,7 +102,7 @@ class LiskServiceRepository {
         };
         const blocks = await this.getBlocks(blockFilterParams);
         return firstOrNull(blocks);
-    };
+    }
 
     async getBlocksBetweenHeights(fromHeight, toHeight, limit) {
         let fromHeightString = fromHeight == null ? '' : fromHeight;
@@ -137,7 +117,7 @@ class LiskServiceRepository {
           blocks.shift();
         }
         return blocks;
-    };
+    }
 
     async getBlockAtHeight(height) {
         const blockFilterParams = {
@@ -145,7 +125,7 @@ class LiskServiceRepository {
         };
         const blocks = await this.getBlocks(blockFilterParams);
         return firstOrNull(blocks);
-    };
+    }
 }
 
 module.exports = LiskServiceRepository;

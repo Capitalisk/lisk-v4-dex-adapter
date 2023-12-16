@@ -4,7 +4,7 @@
   "description": "DEX adapter module for lisk-core v3 blockchain.",
   "main": "index.js",
   "scripts": {
-    "test": "mocha --reporter spec --timeout 5000 --slow 3000",
+    "test": "mocha --timeout 5000 --slow 3000",
     "start": "node main.js"
   },
   "repository": {
@@ -24,9 +24,9 @@
   },
   "homepage": "https://github.com/Capitalisk/lisk-v3-dex-adapter#readme",
   "dependencies": {
+    "@liskhq/lisk-client": "^6.1.0",
     "@liskhq/lisk-cryptography": "^3.1.0",
     "axios": "^0.21.4",
-    "lisk-v3-ws-client-manager": "^1.0.4",
     "lodash.shuffle": "^4.2.0"
   },
   "devDependencies": {

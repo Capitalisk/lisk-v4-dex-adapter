@@ -3,11 +3,48 @@ const assert = require('assert');
 const LiskV3DEXAdapterModule = require('../index');
 const Channel = require('./utils/channel');
 const AppModuleMock = require('./utils/app');
-const {wait} = require('../common/utils');
+const {wait, computeDEXTransactionId} = require('../common/utils');
+
+const {
+  cryptography: liskCryptography,
+  transactions: liskTransactions
+} = require('@liskhq/lisk-client');
+
+const toBuffer = (data) => Buffer.from(data, 'hex');
 
 // This test suite can be adapted to check whether or not a custom chain module is compatible with Lisk DEX.
 // All the boilerplate can be modified except the 'it' blocks where the assertions are made.
 // If a module passes all the test case cases in this file, then it is compatible with Lisk DEX.
+
+const tokenTransferSchema = {
+  $id: '/lisk/transferParams',
+  title: 'Transfer transaction params',
+  type: 'object',
+  required: ['tokenID', 'amount', 'recipientAddress', 'data'],
+  properties: {
+    tokenID: {
+      dataType: 'bytes',
+      fieldNumber: 1,
+      minLength: 8,
+      maxLength: 8,
+    },
+    amount: {
+      dataType: 'uint64',
+      fieldNumber: 2,
+    },
+    recipientAddress: {
+      dataType: 'bytes',
+      fieldNumber: 3,
+      format: 'lisk32',
+    },
+    data: {
+      dataType: 'string',
+      fieldNumber: 4,
+      minLength: 0,
+      maxLength: 64,
+    },
+  },
+};
 
 describe('DEX API tests', async () => {
     let adapterModule;
@@ -17,10 +54,8 @@ describe('DEX API tests', async () => {
     before(async () => {
         adapterModule = new LiskV3DEXAdapterModule({
             config: {
-                env: 'test',
-                dexWalletAddress: 'lsk5gjpsoqgchb8shk8hvwez6ddx3a4b8gga59rw4',
-                rpcURL: 'wss://testnet-api.lisktools.eu/ws',
-                serviceURL: 'https://testnet-service.lisk.com'
+                dexWalletAddress: 'lskdx59zzxpdrpnqjhjt43hq3225fc9umoq7u7e4g',
+                serviceURL: 'https://service.lisk.com'
             },
             logger: {
                 info: () => {
@@ -42,10 +77,6 @@ describe('DEX API tests', async () => {
 
         this.channel.subscribe(`${adapterModule.alias}:${adapterModule.MODULE_BOOTSTRAP_EVENT}`, () => {
             bootstrapEventTriggered = true;
-        });
-
-        this.channel.subscribe(`${adapterModule.alias}:${adapterModule.MODULE_CHAIN_STATE_CHANGES_EVENT}`, (payload) => {
-            chainChangeEvents.push(payload);
         });
 
         await adapterModule.load(this.channel);
@@ -71,7 +102,6 @@ describe('DEX API tests', async () => {
         it('should expose an events property', () => {
             let events = adapterModule.events;
             assert(events.includes('bootstrap'));
-            assert(events.includes('chainChanges'));
         });
 
     });
@@ -80,7 +110,7 @@ describe('DEX API tests', async () => {
 
         describe('getMultisigWalletMembers action', async () => {
 
-            const multiSigWalletAddress = 'lsk5gjpsoqgchb8shk8hvwez6ddx3a4b8gga59rw4';
+            const multiSigWalletAddress = 'lskdx59zzxpdrpnqjhjt43hq3225fc9umoq7u7e4g';
 
             it('should return an array of member addresses', async () => {
                 let walletMembers = await adapterModule.actions.getMultisigWalletMembers.handler({
@@ -89,7 +119,16 @@ describe('DEX API tests', async () => {
                     },
                 });
 
-                const memberAddessList = ['lsk5gjpsoqgchb8shk8hvwez6ddx3a4b8gga59rw4', 'lskmpnnwk2dcrywz6egczeducykso8ykyj9ppdsrh'];
+                const memberAddessList = [
+                  'lsk7fzrxa3xe93cccvzaxkan3juuy3n8cg4xnaqrk',
+                  'lskcd3auuxumqomc3kx84o2dufsbxsnbd5xqzboxr',
+                  'lskeyk3pxgu8u69kzf4ft83xdpdkx2cwpp77e7exp',
+                  'lskfb4pkbu36sv6dyogjpbq6mekn3tutpg6odefp9',
+                  'lskgjgwueod5y4dcj6uoqynwyfwxx434do72v72za',
+                  'lsktkapj8sefwa4dc5fu9do2gtcj6d352h4vkt2bb',
+                  'lskwgu9u48tro29jp6omyom8cddtwdwz2pfrbujx4',
+                  'lskygvzo6r4s6f3h3sq8jo5asrdbc7n5mes92fatt'
+                ];
 
                 // Must be an array of wallet address strings.
                 assert.equal(JSON.stringify(walletMembers.sort()), JSON.stringify(memberAddessList.sort()));
@@ -115,7 +154,7 @@ describe('DEX API tests', async () => {
 
         describe('getMinMultisigRequiredSignatures action', async () => {
 
-            const multiSigWalletAddress = 'lsk5gjpsoqgchb8shk8hvwez6ddx3a4b8gga59rw4';
+            const multiSigWalletAddress = 'lskdx59zzxpdrpnqjhjt43hq3225fc9umoq7u7e4g';
 
             it('should return the number of required signatures', async () => {
                 let requiredSignatureCount = await adapterModule.actions.getMinMultisigRequiredSignatures.handler({
@@ -123,7 +162,7 @@ describe('DEX API tests', async () => {
                         walletAddress: multiSigWalletAddress,
                     },
                 });
-                assert.equal(requiredSignatureCount, 2);
+                assert.equal(requiredSignatureCount, 4);
             });
 
             it('should throw an AccountDidNotExistError if the wallet address does not exist', async () => {
@@ -162,7 +201,7 @@ describe('DEX API tests', async () => {
 
         describe('getOutboundTransactions action', async () => {
 
-            const senderWalletAddress = 'lskhszrdpk5yzngd885cvsvsuxcko7trsvdpn2moz';
+            const senderWalletAddress = 'lskrhqvvvsh9st2e9z7rk9xoecwwqso395fg5pfnb';
 
             it('should return an array of transactions sent from the specified walletAddress', async () => {
                 let transactions = await adapterModule.actions.getOutboundTransactions.handler({
@@ -172,14 +211,15 @@ describe('DEX API tests', async () => {
                         limit: 3,
                     },
                 });
+
                 assert(Array.isArray(transactions));
                 assert.equal(transactions.length, 3);
                 assert.equal(transactions[0].senderAddress, senderWalletAddress);
-                assert.equal(transactions[0].message, '');
+                assert.equal(typeof transactions[0].message, 'string');
                 assert.equal(transactions[1].senderAddress, senderWalletAddress);
-                assert.equal(transactions[1].message, '');
+                assert.equal(typeof transactions[1].message, 'string');
                 assert.equal(transactions[2].senderAddress, senderWalletAddress);
-                assert.equal(transactions[2].message, '');
+                assert.equal(typeof transactions[2].message, 'string');
 
                 for (let txn of transactions) {
                     assert.equal(typeof txn.id, 'string');
@@ -202,31 +242,29 @@ describe('DEX API tests', async () => {
                 assert.equal(Array.isArray(transactions), true);
                 assert.equal(transactions.length, 3);
                 assert.equal(transactions[0].senderAddress, senderWalletAddress);
-                assert.equal(transactions[0].timestamp, 1625259050);
+                assert.equal(transactions[0].timestamp, 1702420100);
                 assert.equal(transactions[1].senderAddress, senderWalletAddress);
-                assert.equal(transactions[1].timestamp, 1626260620);
+                assert.equal(transactions[1].timestamp, 1702421370);
                 assert.equal(transactions[2].senderAddress, senderWalletAddress);
-                assert.equal(transactions[2].timestamp, 1630162470);
+                assert.equal(transactions[2].timestamp, 1702506060);
             });
 
-            it('should return transactions are lower than than fromTimestamp when order is desc', async () => {
+            it('should return transactions which are lower than or equal to fromTimestamp when order is desc', async () => {
                 let transactions = await adapterModule.actions.getOutboundTransactions.handler({
                     params: {
                         walletAddress: senderWalletAddress,
-                        fromTimestamp: 1630162470,
-                        limit: 3,
+                        fromTimestamp: 1702421370,
+                        limit: 2,
                         order: 'desc',
                     },
                 });
 
                 assert.equal(Array.isArray(transactions), true);
-                assert.equal(transactions.length, 3);
+                assert.equal(transactions.length, 2);
                 assert.equal(transactions[0].senderAddress, senderWalletAddress);
-                assert.equal(transactions[0].timestamp, 1630162470);
+                assert.equal(transactions[0].timestamp, 1702421370);
                 assert.equal(transactions[1].senderAddress, senderWalletAddress);
-                assert.equal(transactions[1].timestamp, 1626260620);
-                assert.equal(transactions[2].senderAddress, senderWalletAddress);
-                assert.equal(transactions[2].timestamp, 1625259050);
+                assert.equal(transactions[1].timestamp, 1702420100);
             });
 
             it('should limit the number of transactions based on the specified limit', async () => {
@@ -260,11 +298,11 @@ describe('DEX API tests', async () => {
         describe('getInboundTransactionsFromBlock action', async () => {
 
             it('should return an array of transactions sent to the specified walletAddress', async () => {
-                let recipientAddress = 'lskhoeyvtvoczuzgnompgeynoar2fyoqdq9hh2zjm';
+                let recipientAddress = 'lskdfgve6v7h7x3mn84c39m9esmjabtj5yv9j9hzk';
                 let transactions = await adapterModule.actions.getInboundTransactionsFromBlock.handler({
                     params: {
                         walletAddress: recipientAddress,
-                        blockId: 'cab89ebf649d94f75147a6720da5846db26cb676cac00122df1a278ab871d4f8',
+                        blockId: '3dd17c521eed2676271ec28b83795abe815243aea281c534e8681b57e62ea9f1',
                     },
                 });
                 assert.equal(Array.isArray(transactions), true);
@@ -280,15 +318,15 @@ describe('DEX API tests', async () => {
                 assert.equal(typeof txn.recipientAddress, 'string');
 
                 assert.equal(transactions[0].recipientAddress, recipientAddress);
-                assert.equal(transactions[0].message, 'Payout from ShineKami testnet pool');
+                assert.equal(transactions[0].message, '');
             });
 
             it('should return an empty array if no transactions match the specified blockId', async () => {
-                let recipientAddress = 'lskhoeyvtvoczuzgnompgeynoar2fyoqdq9hh2zjm';
+                let recipientAddress = 'lskdfgve6v7h7x3mn84c39m9esmjabtj5yv9j9hzk';
                 let transactions = await adapterModule.actions.getInboundTransactionsFromBlock.handler({
                     params: {
                         walletAddress: recipientAddress,
-                        blockId: '31d9d53d4912be178c3bd5421a59b2a32f9560ca',
+                        blockId: '963fa8fc2ba0c9bd24f4fc0b3470f0abdca6341ef5469052f083597f87f3e87b',
                     },
                 });
                 assert.equal(Array.isArray(transactions), true);
@@ -300,7 +338,7 @@ describe('DEX API tests', async () => {
                 let transactions = await adapterModule.actions.getInboundTransactionsFromBlock.handler({
                     params: {
                         walletAddress: 'lsksag7kga5pcsppyfw3zv48cy68p79nkmpdk2qo3',
-                        blockId: 'cab89ebf649d94f75147a6720da5846db26cb676cac00122df1a278ab871d4f8',
+                        blockId: '3dd17c521eed2676271ec28b83795abe815243aea281c534e8681b57e62ea9f1',
                     },
                 });
                 assert.equal(Array.isArray(transactions), true);
@@ -310,11 +348,11 @@ describe('DEX API tests', async () => {
 
         describe('getOutboundTransactionsFromBlock action', async () => {
 
-            it('should return an array of transactions sent to the specified walletAddress', async () => {
+            it('should return an array of transactions sent from the specified walletAddress', async () => {
                 let transactions = await adapterModule.actions.getOutboundTransactionsFromBlock.handler({
                     params: {
-                        walletAddress: 'lsksag7kga5pcsppyfw3zv48cy68p79nkmpdk2qo3',
-                        blockId: '748f052b313e2c84595e2e9735550b499162cbbf5ab13a065f10424f4ffa74ee',
+                        walletAddress: 'lskrhqvvvsh9st2e9z7rk9xoecwwqso395fg5pfnb',
+                        blockId: '3dd17c521eed2676271ec28b83795abe815243aea281c534e8681b57e62ea9f1',
                     },
                 });
                 assert.equal(Array.isArray(transactions), true);
@@ -330,16 +368,16 @@ describe('DEX API tests', async () => {
                     assert.equal(typeof txn.recipientAddress, 'string');
                 }
 
-                assert.equal(transactions[0].senderAddress, 'lsksag7kga5pcsppyfw3zv48cy68p79nkmpdk2qo3');
+                assert.equal(transactions[0].senderAddress, 'lskrhqvvvsh9st2e9z7rk9xoecwwqso395fg5pfnb');
                 assert.equal(transactions[0].message, '');
             });
 
             it('should return transactions with a valid signatures property if transaction is from a multisig wallet', async () => {
-                const multiSigWalletAddress = 'lsk5gjpsoqgchb8shk8hvwez6ddx3a4b8gga59rw4';
+                const multiSigWalletAddress = 'lskrhqvvvsh9st2e9z7rk9xoecwwqso395fg5pfnb';
                 let transactions = await adapterModule.actions.getOutboundTransactionsFromBlock.handler({
                     params: {
                         walletAddress: multiSigWalletAddress,
-                        blockId: '50e300c2c5ad79aa23a83a9febf584f82b0784c4488708f9a521ffacfbdbaf75',
+                        blockId: '3dd17c521eed2676271ec28b83795abe815243aea281c534e8681b57e62ea9f1',
                     },
                 });
                 assert(Array.isArray(transactions));
@@ -363,8 +401,8 @@ describe('DEX API tests', async () => {
             it('should return an empty array if no transactions match the specified blockId', async () => {
                 let transactions = await adapterModule.actions.getOutboundTransactionsFromBlock.handler({
                     params: {
-                        walletAddress: 'lsksag7kga5pcsppyfw3zv48cy68p79nkmpdk2qo3',
-                        blockId: '31d9d53d4912be178c3bd5421a59b2a32f9560ca',
+                        walletAddress: 'lskrhqvvvsh9st2e9z7rk9xoecwwqso395fg5pfnb',
+                        blockId: '963fa8fc2ba0c9bd24f4fc0b3470f0abdca6341ef5469052f083597f87f3e87b',
                     },
                 });
                 assert.equal(Array.isArray(transactions), true);
@@ -375,43 +413,12 @@ describe('DEX API tests', async () => {
                 let transactions = await adapterModule.actions.getOutboundTransactionsFromBlock.handler({
                     params: {
                         walletAddress: 'lskhoeyvtvoczuzgnompgeynoar2fyoqdq9hh2zjm',
-                        blockId: '748f052b313e2c84595e2e9735550b499162cbbf5ab13a065f10424f4ffa74ee',
+                        blockId: '3dd17c521eed2676271ec28b83795abe815243aea281c534e8681b57e62ea9f1',
                     },
                 });
                 assert.equal(Array.isArray(transactions), true);
                 assert.equal(transactions.length, 0);
             });
-        });
-
-        describe('getLastBlockAtTimestamp action', async () => {
-
-            it('should return the highest block which is below the specified timestamp', async () => {
-                let block = await adapterModule.actions.getLastBlockAtTimestamp.handler({
-                    params: {
-                        timestamp: 1631600251,
-                    },
-                });
-                assert.notEqual(block, null);
-                assert.equal(block.height, 14577194);
-                assert.equal(block.timestamp, 1631600250);
-            });
-
-            it('should throw a BlockDidNotExistError error if no block can be found before the specified timestamp', async () => {
-                let caughtError = null;
-                try {
-                    await adapterModule.actions.getLastBlockAtTimestamp.handler({
-                        params: {
-                            timestamp: 100,
-                        },
-                    });
-                } catch (error) {
-                    caughtError = error;
-                }
-                assert.notEqual(caughtError, null);
-                assert.equal(caughtError.type, 'InvalidActionError');
-                assert.equal(caughtError.name, 'BlockDidNotExistError');
-            });
-
         });
 
         describe('getMaxBlockHeight action', async () => {
@@ -428,8 +435,8 @@ describe('DEX API tests', async () => {
             it('should return blocks whose height is greater than fromHeight and less than or equal to toHeight', async () => {
                 let blocks = await adapterModule.actions.getBlocksBetweenHeights.handler({
                     params: {
-                        fromHeight: 14577190,
-                        toHeight: 14577191,
+                        fromHeight: 23476950,
+                        toHeight: 23476951,
                         limit: 100,
                     },
                 });
@@ -438,7 +445,7 @@ describe('DEX API tests', async () => {
                 let block = blocks[0];
                 assert.equal(typeof block.id, 'string');
                 assert.equal(Number.isInteger(block.timestamp), true);
-                assert.equal(block.height, 14577191);
+                assert.equal(block.height, 23476951);
             });
 
             it('should return blocks whose height is greater than fromHeight and less than or equal to toHeight', async () => {
@@ -471,11 +478,11 @@ describe('DEX API tests', async () => {
             it('should expose a getBlockAtHeight action', async () => {
                 let block = await adapterModule.actions.getBlockAtHeight.handler({
                     params: {
-                        height: 14577653,
+                        height: 23476951,
                     },
                 });
                 assert.notEqual(block, null);
-                assert.equal(block.height, 14577653);
+                assert.equal(block.height, 23476951);
                 assert.equal(Number.isInteger(block.timestamp), true);
             });
 
@@ -507,14 +514,78 @@ describe('DEX API tests', async () => {
                 // The format of each signature object is flexible depending on the output of the ChainCrypto
                 // adapter but it will have a 'signerAddress' property.
                 // The chain module can handle the transaction and signature objects however it wants.
-                let preparedTxn = await client.prepareTransaction({
-                    type: 'transfer',
-                    recipientAddress: 'ldpos5f0bc55450657f7fcb188e90122f7e4cee894199',
-                    amount: '3300000000',
-                    fee: '100000000',
-                    timestamp: 100000,
-                    message: '',
-                });
+
+                let chainId = '00000000';
+                let chainIdBytes = toBuffer(chainId);
+
+                let recipientAddress = ''; // TODO
+
+                let sharedPassphrase = ''; // TODO
+
+
+                let passphrase = ''; // TODO
+                let multisigWalletKeys = {
+                  mandatoryKeys: [],
+                  optionalKeys: []
+                };
+                let nonceString = '1';// TODO
+
+                const txnData = {
+                  module: 'token',
+                  command: 'transfer',
+                  nonce: BigInt(nonceString),
+                  fee: BigInt('700000'),
+                  senderPublicKey: multisigWalletKeys.optionalKeys[0],// TODO
+                  signatures: [],
+                  params: {
+                    tokenID: toBuffer('0000000000000000'),
+                    recipientAddress: liskCryptography.address.getAddressFromLisk32Address(recipientAddress),
+                    amount: BigInt('20000000'),
+                    data: 'testing'
+                  }
+                };
+
+                let {publicKey: sharedPublicKey, privateKey: sharedPrivateKey} = liskCryptography.legacy.getPrivateAndPublicKeyFromPassphrase(sharedPassphrase);
+                let {publicKey: signerPublicKey, privateKey: signerPrivateKey} = liskCryptography.legacy.getPrivateAndPublicKeyFromPassphrase(passphrase);
+
+                let signedTxn = liskTransactions.signMultiSignatureTransaction(txnData, chainIdBytes, sharedPrivateKey, multisigWalletKeys, tokenTransferSchema);
+                liskTransactions.signMultiSignatureTransaction(signedTxn, chainIdBytes, signerPrivateKey, multisigWalletKeys, tokenTransferSchema);
+
+                let senderAddress = liskCryptography.address.getLisk32AddressFromPublicKey(sharedPublicKey);
+                let signerAddress = liskCryptography.address.getLisk32AddressFromPublicKey(signerPublicKey);
+
+                let preparedTxn = {
+                  id: computeDEXTransactionId(senderAddress, nonceString),
+                  message: signedTxn.params.data,
+                  amount: signedTxn.params.amount.toString(),
+                  tokenID: signedTxn.params.tokenID.toString('hex'),
+                  timestamp: Date.now(),
+                  senderAddress,
+                  recipientAddress: liskCryptography.address.getLisk32AddressFromAddress(signedTxn.params.recipientAddress),
+                  signatures: [
+                    {
+                      signerAddress: senderAddress,
+                      publicKey: sharedPublicKey.toString('hex'),
+                      signature: signedTxn.signatures[0].toString('hex')
+                    }
+                  ],
+                  module: signedTxn.module,
+                  command: signedTxn.command,
+                  fee: signedTxn.fee.toString(),
+                  nonce: nonceString,
+                  senderPublicKey: signedTxn.senderPublicKey.toString('hex')
+                };
+
+                // The signature needs to be an object with a signerAddress property, the other
+                // properties are flexible and depend on the requirements of the underlying blockchain.
+                let multisigTxnSignature = {
+                  signerAddress,
+                  publicKey: signerPublicKey.toString('hex'),
+                  signature: signedTxn.signatures[1].toString('hex')
+                };
+
+                preparedTxn.signatures.push(multisigTxnSignature);
+
                 await adapterModule.actions.postTransaction.handler({
                     params: {
                         transaction: preparedTxn,
@@ -531,17 +602,6 @@ describe('DEX API tests', async () => {
         it('should trigger bootstrap event after launch', async () => {
             assert(bootstrapEventTriggered);
         });
-
-        it('should expose a chainChanges event', async () => {
-            await wait(5000);
-            assert(chainChangeEvents.length >= 1);
-            let eventData = chainChangeEvents[0].data;
-            assert.equal(eventData.type, 'addBlock');
-            let {block} = eventData;
-            assert.notEqual(block, null);
-            assert(Number.isInteger(block.height));
-            assert(Number.isInteger(block.timestamp));
-        }).timeout(30000);
 
     });
 
