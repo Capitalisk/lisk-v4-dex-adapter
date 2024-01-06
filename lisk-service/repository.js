@@ -7,7 +7,6 @@ const DEFAULT_MAIN_NET_URL = 'https://service.lisk.com';
 const DEFAULT_ACK_TIMEOUT = 20000;
 
 class LiskServiceRepository {
-
     constructor({config = {}, logger = console}) {
         this.serviceURL = config.serviceURL || DEFAULT_MAIN_NET_URL;
         this.axiosClient = axios.create({
@@ -65,7 +64,7 @@ class LiskServiceRepository {
         const transactionFilterParams = {
             [metaStore.Transactions.filter.senderAddress]: senderAddress,
             [metaStore.Transactions.filter.limit]: limit,
-            [metaStore.Transactions.filter.moduleCommand]: 'token:transfer', // token transfer
+            [metaStore.Transactions.filter.moduleCommand]: 'token:transfer',
         };
         if (order === 'asc') {
             transactionFilterParams[metaStore.Transactions.filter.sort] = metaStore.Transactions.sortBy.timestampAsc;

@@ -54,7 +54,6 @@ const tokenTransferSchema = {
 };
 
 class LiskV3DEXAdapter {
-
     constructor({alias, config = {}, logger = console} = {config: {}, logger: console}) {
         this.alias = alias || DEFAULT_MODULE_ALIAS;
         this.logger = logger;
